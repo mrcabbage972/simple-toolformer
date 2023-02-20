@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 def get_scores_for_labels(input, labels, model, tokenizer):
   # https://colab.research.google.com/drive/1Q8VAwCPB12ZzYH79nAuiiSSnVDkZ2-u7?usp=sharing#scrollTo=WJshYeFQ_IeB

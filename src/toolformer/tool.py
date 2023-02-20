@@ -16,19 +16,19 @@ class Tool(metaclass=ABCMeta):
             result = r'^.*' + result
         return result
 
-    def text_has_api_call(self, text) -> bool:
+    def text_has_call(self, text) -> bool:
         return re.match(self.get_tool_regex(), text) is not None
 
-    def get_api_call_from_text(self, text) -> str:
+    def get_call_from_text(self, text) -> str:
         result = re.search('^.*(?P<api_call>{})'.format(self.get_tool_regex()), text)
         return result.groupdict()['api_call']
 
-    def get_text_before_api_call(self, text) -> str:
+    def get_text_before_call(self, text) -> str:
         # TODO: refactor
         result = re.search('^.*(?P<api_call>{})'.format(self.get_tool_regex()), text)
         return text[:result.span('api_call')[0]]
 
-    def get_text_after_api_call(self, text) -> str:
+    def get_text_after_call(self, text) -> str:
         result = re.search('^.*(?P<api_call>{})'.format(self.get_tool_regex()), text)
         return text[result.span('api_call')[1]:]
 

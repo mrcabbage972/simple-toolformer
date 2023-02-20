@@ -30,15 +30,15 @@ class Toolformer:
         self.tokenizer = T5Tokenizer.from_pretrained(self.model_name)
         self.model = T5ForConditionalGeneration.from_pretrained(self.model_name)
 
-        self.api_call_thresh = 0
+        self.tool_call_thresh = 0
 
     def fit(self, dataset: Dataset, tools: List[Tool]):
         samples_for_tuning = []
         for tool in tools:
-            maybe_api_samples = self.sample_dataset(dataset, tool)
-            api_samples = maybe_api_samples.filter(lambda x: tool.text_has_api_call(x['text']))
-            executed_api_samples = api_samples.map(lambda x: self.execute_api_call(x, tool))
-            likely_samples = self.filter_likelihood(executed_api_samples, tool)
+            maybe_tool_samples = self.sample_dataset(dataset, tool)
+            tool_samples = maybe_tool_samples.filter(lambda x: tool.text_has_call(x['text']))
+            executed_tool_samples = tool_samples.map(lambda x: self.execute_tool_call(x, tool))
+            likely_samples = self.filter_likelihood(executed_tool_samples, tool)
             samples_for_tuning.append(likely_samples)
         self.fine_tune(likely_samples) # TODO: convert to dataset
 
@@ -75,19 +75,25 @@ class Toolformer:
         return Dataset.from_dict({'text': all_preds})
 
     def filter_likelihood(self, inputs: Dataset, tool: Tool) -> Dataset:
-        inputs = inputs.map(lambda x: {**x, 'text_before': tool.get_text_before_api_call(x['text']),
-                              'api_call': tool.get_text_after_api_call(x['text']),
-                              'text_after': tool.get_text_after_api_call(x['text'])})
+        inputs = inputs.map(lambda x: {**x,
+                              'text_before': tool.get_text_before_call(x['text']),
+                              'tool_call': tool.get_call_from_text(x['text']),
+                              'text_after': tool.get_text_after_call(x['text'])})
 
         inputs = inputs.map(lambda x: {**x,
-           'loss_no_api': get_scores_for_labels(x['text_before'], x['text_after'], self.model, self.tokenizer),
-           'loss_api': get_scores_for_labels(inputs['api_result_text_before'], inputs['text_after'], self.model, self.tokenizer),
-           'loss_api_no_result': get_scores_for_labels(inputs['api_text_before'], inputs['text_after'], self.model, self.tokenizer)
+                                       'tool_call_text_before': x['tool_call'] + x['text_before'],
+                                       'tool_call_result_text_before': x['tool_call'] + x['tool_result'] + x['text_before'],
+                                       })
+
+        inputs = inputs.map(lambda x: {**x,
+           'loss_no_tool': get_scores_for_labels(x['text_before'], x['text_after'], self.model, self.tokenizer),
+           'loss_tool': get_scores_for_labels(inputs['tool_call_text_before'], inputs['text_after'], self.model, self.tokenizer),
+           'loss_tool_no_result': get_scores_for_labels(inputs['tool_call_text_before'], inputs['text_after'], self.model, self.tokenizer)
         }, batched=True)
 
-        # loss (with prefix of api call and result ) < min(loss (with prefix of api call), loss(no api call)
+        # loss (with prefix of tool call and result ) < min(loss (with prefix of tool call), loss(no tool call)
 
-        return inputs.filter(lambda x: min(x['loss_no_api'], x['loss_api_no_result']) - x['loss_api'] >= self.api_call_thresh)
+        return inputs.filter(lambda x: min(x['loss_no_tool'], x['loss_tool_no_result']) - x['loss_tool'] >= self.tool_call_thresh)
 
     def fine_tune(self, likely_samples: Dataset):
         datasets = likely_samples.train_test_split(test_size=0.2)
@@ -122,6 +128,6 @@ class Toolformer:
 
         trainer.train()
 
-    def execute_api_call(self, sample, tool: Tool) -> dict:
+    def execute_tool_call(self, sample, tool: Tool) -> dict:
         sample['tool_result'] = tool.run(sample['text'])
         return sample

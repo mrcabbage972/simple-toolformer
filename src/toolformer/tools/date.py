@@ -25,7 +25,7 @@ class DateTool(Tool):
 
 
 if __name__ == '__main__':
-    print(DateTool().text_has_api_call('aaa [DATE()] bbb'))
-    print(DateTool().get_text_before_api_call('aaa [DATE()] bbb'))
-    print(DateTool().get_api_call_from_text('aaa [DATE()] bbb'))
-    print(DateTool().get_text_after_api_call('aaa [DATE()] bbb'))
+    print(DateTool().text_has_call('aaa [DATE()] bbb'))
+    print(DateTool().get_text_before_call('aaa [DATE()] bbb'))
+    print(DateTool().get_call_from_text('aaa [DATE()] bbb'))
+    print(DateTool().get_text_after_call('aaa [DATE()] bbb'))
