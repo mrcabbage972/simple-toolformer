@@ -75,17 +75,19 @@ class Toolformer:
         return Dataset.from_dict({'text': all_preds})
 
     def filter_likelihood(self, inputs: Dataset, tool: Tool) -> Dataset:
-        inputs = inputs.map(lambda x: x.update({'text_before': tool.get_text_before_api_call(x['text']),
+        inputs = inputs.map(lambda x: {**x, 'text_before': tool.get_text_before_api_call(x['text']),
                               'api_call': tool.get_text_after_api_call(x['text']),
-                              'text_after': tool.get_text_after_api_call(x['text'])}))
+                              'text_after': tool.get_text_after_api_call(x['text'])})
 
-        loss_no_api = get_scores_for_labels(inputs['text_before'], inputs['text_after'], self.model, self.tokenizer)
-        loss_api = get_scores_for_labels(inputs['api_result_text_before'], inputs['text_after'], self.model, self.tokenizer)
-        loss_api_no_result = get_scores_for_labels(inputs['api_text_before'], inputs['text_after'], self.model, self.tokenizer)
+        inputs = inputs.map(lambda x: {**x,
+           'loss_no_api': get_scores_for_labels(x['text_before'], x['text_after'], self.model, self.tokenizer),
+           'loss_api': get_scores_for_labels(inputs['api_result_text_before'], inputs['text_after'], self.model, self.tokenizer),
+           'loss_api_no_result': get_scores_for_labels(inputs['api_text_before'], inputs['text_after'], self.model, self.tokenizer)
+        }, batched=True)
 
         # loss (with prefix of api call and result ) < min(loss (with prefix of api call), loss(no api call)
 
-        return inputs.filter(min(loss_no_api, loss_api_no_result) - loss_api >= self.api_call_thresh) # this line doesn't work yet
+        return inputs.filter(lambda x: min(x['loss_no_api'], x['loss_api_no_result']) - x['loss_api'] >= self.api_call_thresh)
 
     def fine_tune(self, likely_samples: Dataset):
         datasets = likely_samples.train_test_split(test_size=0.2)
