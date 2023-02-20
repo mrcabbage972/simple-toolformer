@@ -86,9 +86,9 @@ class Toolformer:
                                        })
 
         inputs = inputs.map(lambda x: {**x,
-           'loss_no_tool': get_scores_for_labels(x['text_before'], x['text_after'], self.model, self.tokenizer),
-           'loss_tool': get_scores_for_labels(inputs['tool_call_text_before'], inputs['text_after'], self.model, self.tokenizer),
-           'loss_tool_no_result': get_scores_for_labels(inputs['tool_call_text_before'], inputs['text_after'], self.model, self.tokenizer)
+           'loss_no_tool': get_scores_for_labels(x['text_before'], x['text_after'], self.model, self.tokenizer)[0],
+           'loss_tool': get_scores_for_labels(inputs['tool_call_text_before'], inputs['text_after'], self.model, self.tokenizer)[0],
+           'loss_tool_no_result': get_scores_for_labels(inputs['tool_call_text_before'], inputs['text_after'], self.model, self.tokenizer)[0]
         }, batched=True)
 
         # loss (with prefix of tool call and result ) < min(loss (with prefix of tool call), loss(no tool call)
