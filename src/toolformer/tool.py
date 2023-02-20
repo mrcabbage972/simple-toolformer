@@ -10,22 +10,27 @@ class Tool(metaclass=ABCMeta):
     def get_tool_signature(self):
         return '{}{}{}'.format(self.API_CALL_PREFIX, self.get_tool_name().upper(), self.API_CALL_SUFFIX)
 
+    def get_tool_regex(self, match_before=False):
+        result = r'\[{}\(.*\)\]'.format(self.get_tool_name().upper())
+        if match_before:
+            result = r'^.*' + result
+        return result
+
     def text_has_api_call(self, text) -> bool:
-        # TODO: Does this work?
-        pattern = r'\[{}\(.*\)\]'.format(self.get_tool_name().upper())
-        return re.match(pattern, text) is not None
+        return re.match(self.get_tool_regex(), text) is not None
 
     def get_api_call_from_text(self, text) -> str:
-        # TODO: Implement
-        pass
+        result = re.search('^.*(?P<api_call>{})'.format(self.get_tool_regex()), text)
+        return result.groupdict()['api_call']
 
     def get_text_before_api_call(self, text) -> str:
-        # TODO: Implement
-        pass
+        # TODO: refactor
+        result = re.search('^.*(?P<api_call>{})'.format(self.get_tool_regex()), text)
+        return text[:result.span('api_call')[0]]
 
     def get_text_after_api_call(self, text) -> str:
-        # TODO: Implement
-        pass
+        result = re.search('^.*(?P<api_call>{})'.format(self.get_tool_regex()), text)
+        return text[result.span('api_call')[1]:]
 
     @ abstractmethod
     def get_tool_name(self):
