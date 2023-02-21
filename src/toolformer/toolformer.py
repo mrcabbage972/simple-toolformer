@@ -2,7 +2,7 @@ import os
 from typing import List, Mapping
 
 import torch
-from datasets import Dataset
+from datasets import Dataset, concatenate_datasets
 from torch.utils.data import DataLoader
 from transformers import T5Tokenizer, DataCollatorWithPadding, Seq2SeqTrainer, Seq2SeqTrainingArguments, \
     EarlyStoppingCallback, T5ForConditionalGeneration
@@ -26,7 +26,7 @@ class Toolformer:
             executed_tool_samples = tool_samples.map(lambda x: self.execute_tool_call(x, tool))
             likely_samples = self.filter_likelihood(executed_tool_samples, tool)
             samples_for_tuning.append(likely_samples)
-        self.fine_tune(likely_samples)  # TODO: convert to dataset
+        self.fine_tune(concatenate_datasets(samples_for_tuning))
 
     def sample_dataset(self, dataset: Dataset, tool: Tool) -> Dataset:
         """
