@@ -31,7 +31,7 @@ class Toolformer:
     def sample_dataset(self, dataset: Dataset, tool: Tool) -> Dataset:
         """
             This methods samples a dataset to produce example API calls.
-            The current implementation is significantly simplified from what is described in the paper and likely
+            The sampling procedure is significantly simplified from what is described in the paper and likely
             wouldn't work well.
         :param dataset:
             The input texts
