@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import List, Mapping
 
@@ -11,6 +12,7 @@ from toolformer.config import ToolformerConfig
 from toolformer.sequence_scoring import get_scores_for_labels
 from toolformer.tool import Tool
 
+logger = logging.getLogger(__name__)
 
 class Toolformer:
     def __init__(self):
@@ -19,6 +21,7 @@ class Toolformer:
         self.model = T5ForConditionalGeneration.from_pretrained(self.cfg.model_name)
 
     def fit(self, dataset: Dataset, tools: List[Tool]):
+        logger.info('Fitting with a dataset of size {} and {} tools'.format(len(dataset), len(tools)))
         samples_for_tuning = []
         for tool in tools:
             maybe_tool_samples = self.sample_dataset(dataset, tool)
@@ -26,7 +29,10 @@ class Toolformer:
             executed_tool_samples = tool_samples.map(lambda x: self.execute_tool_call(x, tool))
             likely_samples = self.filter_likelihood(executed_tool_samples, tool)
             samples_for_tuning.append(likely_samples)
-        self.fine_tune(concatenate_datasets(samples_for_tuning))
+        dataset_for_tuning = concatenate_datasets(samples_for_tuning)
+        if len(dataset_for_tuning) == 0:
+            raise ValueError("Can't proceed: There is no data to fine-tune on!")
+        self.fine_tune(dataset_for_tuning)
 
     def sample_dataset(self, dataset: Dataset, tool: Tool) -> Dataset:
         """
@@ -40,6 +46,8 @@ class Toolformer:
         :return:
             A Dataset containing a text field and a score field.
         """
+        logger.info('Sampling dataset')
+
         encoded_dataset = dataset.map(lambda x: self.tokenizer([tool.get_prompt_template().format(z) for z in x],
                                                                truncation=True, padding=True), batched=True)
         encoded_dataset.set_format(columns=['input_ids', 'attention_mask'], type='torch')
@@ -61,6 +69,8 @@ class Toolformer:
         return Dataset.from_dict({'text': all_preds})
 
     def filter_likelihood(self, inputs: Dataset, tool: Tool) -> Dataset:
+        logger.info('Filtering generated samples by their likelihood')
+
         inputs = inputs.map(lambda x: {**x,
                                        'text_before': tool.get_text_before_call(x['text']),
                                        'tool_call': tool.get_call_from_text(x['text']),
@@ -89,8 +99,9 @@ class Toolformer:
         return inputs.filter(
             lambda x: min(x['loss_no_tool'], x['loss_tool_no_result']) - x['loss_tool'] >= self.cfg.tool_call_thresh)
 
-    def fine_tune(self, likely_samples: Dataset):
-        datasets = likely_samples.train_test_split(test_size=0.2)
+    def fine_tune(self, api_call_samples: Dataset):
+        logger.info('Fine-tuning the model on {} API call samples'.format(len(api_call_samples)))
+        datasets = api_call_samples.train_test_split(test_size=0.2)
 
         train_args = Seq2SeqTrainingArguments(
             output_dir=os.path.join(self.cfg.output_path, self.cfg.output_name),

@@ -1,8 +1,11 @@
+import logging
+
 from datasets import load_dataset
 
 from toolformer.toolformer import Toolformer
 from toolformer.tools.date import DateTool
 
+logging.basicConfig(level=logging.INFO)
 
 def main():
     tf = Toolformer()

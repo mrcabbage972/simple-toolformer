@@ -10,7 +10,7 @@ class Tool(metaclass=ABCMeta):
     def get_tool_signature(self):
         return '{}{}{}'.format(self.API_CALL_PREFIX, self.get_tool_name().upper(), self.API_CALL_SUFFIX)
 
-    def get_tool_regex(self, match_before=False):
+    def get_tool_regex(self, match_before=False) -> str:
         result = r'\[{}\(.*\)\]'.format(self.get_tool_name().upper())
         if match_before:
             result = r'^.*' + result
