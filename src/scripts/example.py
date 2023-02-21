@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 def main():
     tf = Toolformer()
 
-    dataset = load_dataset("gsm8k", split="train").select(range(2))
+    dataset = load_dataset("gsm8k", 'main', split="train").select(range(2))
     apis = [DateTool(), CalculatorTool()]
 
     tf.fit(dataset, apis)
