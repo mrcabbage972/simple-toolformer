@@ -36,9 +36,13 @@ class Toolformer:
         samples_for_tuning = []
         for tool in tools:
             maybe_tool_samples = self.sample_dataset(dataset, tool)
+            logger.info('Examples of {} tool generation results: {}'.format(tool.get_tool_name(), ','.join(maybe_tool_samples[:2]['text'])))
             tool_samples = maybe_tool_samples.filter(lambda x: tool.text_has_call(x['text']))
+            logger.info('{} samples left after filtering for tool name'.format(len(tool_samples)))
+            logger.info('Examples of {} tool filtered annotations: {}'.format(tool.get_tool_name(), ','.join(maybe_tool_samples[:2]['text'])))
             executed_tool_samples = tool_samples.map(lambda x: self.execute_tool_call(x, tool))
             likely_samples = self.filter_likelihood(executed_tool_samples, tool)
+            logger.info('{} samples left after filtering by likelihood'.format(len(likely_samples)))
             samples_for_tuning.append(likely_samples)
         dataset_for_tuning = concatenate_datasets(samples_for_tuning)
         if len(dataset_for_tuning) == 0:
