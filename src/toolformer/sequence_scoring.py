@@ -1,8 +1,18 @@
+from typing import List
+
 import torch
 import torch.nn.functional as F
 
-def get_scores_for_labels(input, labels, model, tokenizer):
-  # https://colab.research.google.com/drive/1Q8VAwCPB12ZzYH79nAuiiSSnVDkZ2-u7?usp=sharing#scrollTo=WJshYeFQ_IeB
+def get_scores_for_labels(input: List[str], labels: List[str], model, tokenizer):
+  """
+    Calculates the conditional log-likelihood of labels given the input, for an encoder-decoder model
+  :param input:
+  :param labels:
+  :param model:
+  :param tokenizer:
+  :return:
+  """
+  # Taken from: https://colab.research.google.com/drive/1Q8VAwCPB12ZzYH79nAuiiSSnVDkZ2-u7?usp=sharing#scrollTo=WJshYeFQ_IeB
 
   batch_size, num_labels = len(input), len(labels)
   # Get encodings

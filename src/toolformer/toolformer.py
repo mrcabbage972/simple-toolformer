@@ -21,6 +21,17 @@ class Toolformer:
         self.model = T5ForConditionalGeneration.from_pretrained(self.cfg.model_name)
 
     def fit(self, dataset: Dataset, tools: List[Tool]):
+        """
+            This is the main method for implementing the training process described in the Toolformer paper.
+            It contains three stages:
+            1. Use the model to generate samples of tool usage, using few-shot prompting
+            2. Filter the samples by a measure of how much the improve the likelihood of the text after the tool call.
+            3. Fit the model on the filtered samples.
+        :param dataset:
+            The dataset to fit on.
+        :param tools:
+            A list of tools to be considered.
+        """
         logger.info('Fitting with a dataset of size {} and {} tools'.format(len(dataset), len(tools)))
         samples_for_tuning = []
         for tool in tools:
@@ -100,8 +111,12 @@ class Toolformer:
             lambda x: min(x['loss_no_tool'], x['loss_tool_no_result']) - x['loss_tool'] >= self.cfg.tool_call_thresh)
 
     def fine_tune(self, api_call_samples: Dataset):
+        """
+            This is just standard HF fine-tuning.
+        :param api_call_samples:
+        """
         logger.info('Fine-tuning the model on {} API call samples'.format(len(api_call_samples)))
-        datasets = api_call_samples.train_test_split(test_size=0.2)
+        datasets = api_call_samples.train_test_split(test_size=self.cfg.test_size)
 
         train_args = Seq2SeqTrainingArguments(
             output_dir=os.path.join(self.cfg.output_path, self.cfg.output_name),

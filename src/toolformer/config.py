@@ -19,6 +19,7 @@ class ToolformerConfig:
     warmup_ratio = 0.1
     fp16 = False
     early_stopping_patience = 1
+    test_size = 0.2
 
     # Filtering
     tool_call_thresh = 0

@@ -3,12 +3,12 @@ from abc import ABCMeta, abstractmethod
 
 
 class Tool(metaclass=ABCMeta):
+    """
+    This is the base class for tools. It provides some convenience methods around extracting tool annotations.
+    """
     API_CALL_PREFIX = '['
     API_CALL_SUFFIX = ']'
     RESULT_PREFIX = '->'
-
-    def get_tool_signature(self):
-        return '{}{}{}'.format(self.API_CALL_PREFIX, self.get_tool_name().upper(), self.API_CALL_SUFFIX)
 
     def get_tool_regex(self, match_before=False) -> str:
         result = r'\[{}\(.*\)\]'.format(self.get_tool_name().upper())
