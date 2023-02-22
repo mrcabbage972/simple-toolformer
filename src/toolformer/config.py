@@ -4,11 +4,11 @@ from dataclasses import dataclass
 @dataclass
 class ToolformerConfig:
     # General
-    model_name = "google/flan-t5-small"
+    model_name = "gpt2"
     target_device = 'cpu'
 
     # Training
-    max_length = 64
+    max_length = 1024
     output_path = '..'
     output_name = 'model'
     learning_rate = 1e-4

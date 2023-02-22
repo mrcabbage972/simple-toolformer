@@ -28,8 +28,7 @@ Input: From this, we have 4 * 30 minutes = 120 minutes.
 Output: From this, we have 4 * 30 minutes = [Calculator(4 * 30)] 120 minutes. 
 
 Input: x 
-Output: {}
-"""
+Output: {}"""
 
     def run(self, input: str) -> str:
         # TODO: the following code should be a method in the Tool class.

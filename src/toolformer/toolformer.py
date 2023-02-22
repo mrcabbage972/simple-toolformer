@@ -6,7 +6,7 @@ import torch
 from datasets import Dataset, concatenate_datasets
 from torch.utils.data import DataLoader
 from transformers import T5Tokenizer, DataCollatorWithPadding, Seq2SeqTrainer, Seq2SeqTrainingArguments, \
-    EarlyStoppingCallback, T5ForConditionalGeneration
+    EarlyStoppingCallback, T5ForConditionalGeneration, AutoTokenizer, AutoModelForCausalLM
 
 from toolformer.config import ToolformerConfig
 from toolformer.sequence_scoring import get_scores_for_labels
@@ -17,8 +17,9 @@ logger = logging.getLogger(__name__)
 class Toolformer:
     def __init__(self):
         self.cfg = ToolformerConfig()
-        self.tokenizer = T5Tokenizer.from_pretrained(self.cfg.model_name)
-        self.model = T5ForConditionalGeneration.from_pretrained(self.cfg.model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.cfg.model_name, padding_side='left')
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.model = AutoModelForCausalLM.from_pretrained(self.cfg.model_name)
 
     def fit(self, dataset: Dataset, tools: List[Tool]):
         """
@@ -63,7 +64,7 @@ class Toolformer:
         """
         logger.info('Sampling dataset')
 
-        encoded_dataset = dataset.map(lambda x: self.tokenizer([tool.get_prompt_template().format(z) for z in x],
+        encoded_dataset = dataset.map(lambda x: self.tokenizer([tool.get_prompt_template().format(z) for z in x['input']],
                                                                truncation=True, padding=True), batched=True)
         encoded_dataset.set_format(columns=['input_ids', 'attention_mask'], type='torch')
         test_data_loader = DataLoader(encoded_dataset, batch_size=32,
@@ -81,7 +82,11 @@ class Toolformer:
 
                 all_preds += [self.tokenizer.decode(x, skip_special_tokens=True) for x in batch_preds['sequences']]
 
-        return Dataset.from_dict({'text': all_preds})
+        # This is a bit ugly
+        pred_ds = Dataset.from_dict({'text': all_preds,
+                                     'prompt': [tool.get_prompt_template().format(z) for z in dataset]})
+        #prompt_end_idx = len(tool.get_prompt_template().replace('{}', '').rstrip())
+        return pred_ds.map(lambda x: {'text': x['text'][len(x['prompt']):]})
 
     def filter_likelihood(self, inputs: Dataset, tool: Tool) -> Dataset:
         logger.info('Filtering generated samples by their likelihood')

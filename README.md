@@ -7,4 +7,6 @@ Therefore, it's intended to be used for educational purposes only.
 
 The main difference compared to the paper is that  I simplified the procedure for sampling API calls from unlabeled texts.
 # Usage
-The example script is at `src/scripts/example.py`. Don't forget to install the requirements file!
+First, please install the requirements file.
+
+The example training script is at `src/scripts/train_gsm8k.py`. This would train the model on the [GSM8k](https://huggingface.co/datasets/gsm8k) dataset of Math Word Problems. 
