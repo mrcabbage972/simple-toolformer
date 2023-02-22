@@ -1,12 +1,7 @@
 from toolformer.tool import Tool
 
-
-class CalculatorTool(Tool):
-    def get_tool_name(self):
-        return 'CALCULATOR'
-
-    def get_prompt_template(self) -> str:
-        return """
+PROMPT_TEMPLATE = \
+    """
 Your task is to add calls to a Calculator API to a piece of text.
 The calls should help you get information required to complete the text.
 You can call the API by writing "[Calculator(expression)]" where "expression" is the expression to be computed.
@@ -29,6 +24,14 @@ Output: From this, we have 4 * 30 minutes = [CALCULATOR(4 * 30)] 120 minutes.
 
 Input: {} 
 Output: """
+
+
+class CalculatorTool(Tool):
+    def get_tool_name(self):
+        return 'CALCULATOR'
+
+    def get_prompt_template(self) -> str:
+        return PROMPT_TEMPLATE
 
     def run(self, input: str) -> str:
         # TODO: the following code should be a method in the Tool class.
