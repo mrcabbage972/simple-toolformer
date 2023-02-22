@@ -18,8 +18,8 @@ class Toolformer:
     def __init__(self):
         self.cfg = ToolformerConfig()
         self.tokenizer = AutoTokenizer.from_pretrained(self.cfg.model_name, padding_side='left')
-        self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.model = AutoModelForCausalLM.from_pretrained(self.cfg.model_name)
+        #self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.model = T5ForConditionalGeneration.from_pretrained(self.cfg.model_name)
 
     def fit(self, dataset: Dataset, tools: List[Tool]):
         """
@@ -86,7 +86,7 @@ class Toolformer:
         pred_ds = Dataset.from_dict({'text': all_preds,
                                      'prompt': [tool.get_prompt_template().format(z) for z in dataset]})
         #prompt_end_idx = len(tool.get_prompt_template().replace('{}', '').rstrip())
-        return pred_ds.map(lambda x: {'text': x['text'][len(x['prompt']):]})
+        return pred_ds #pred_ds.map(lambda x: {'text': x['text'][len(x['prompt']):]})
 
     def filter_likelihood(self, inputs: Dataset, tool: Tool) -> Dataset:
         logger.info('Filtering generated samples by their likelihood')

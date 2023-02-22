@@ -6,7 +6,7 @@ import torch
 @dataclass
 class ToolformerConfig:
     # General
-    model_name = "gpt2"
+    model_name = "google/flan-t5-small"
     target_device = 'cpu' if not torch.cuda.is_available() else 'cuda'
 
     # Training
