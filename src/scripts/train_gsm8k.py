@@ -1,4 +1,5 @@
 import logging
+import re
 
 from datasets import load_dataset
 
@@ -14,7 +15,8 @@ def main():
     dataset = load_dataset("gsm8k", 'main', split="train").select(range(2))
     dataset = dataset.rename_column('question', 'input')
     dataset = dataset.rename_column('answer', 'label') # TODO: remove math annotations from answers
-    apis = [DateTool(), CalculatorTool()]
+    dataset = dataset.map(lambda x: {'input': x['input'], 'label': re.sub("(<<).*?(>>)", "", x['label'])})
+    apis = [CalculatorTool()]
 
     tf.fit(dataset, apis)
 
