@@ -64,7 +64,7 @@ class Toolformer:
         """
         logger.info('Sampling dataset')
 
-        encoded_dataset = dataset.map(lambda x: self.tokenizer([tool.get_prompt_template().format(z) for z in x['input']],
+        encoded_dataset = dataset.map(lambda x: self.tokenizer([tool.get_prompt_template().format(z) for z in x['label']],
                                                                truncation=True, padding=True), batched=True)
         encoded_dataset.set_format(columns=['input_ids', 'attention_mask'], type='torch')
         test_data_loader = DataLoader(encoded_dataset, batch_size=32,
@@ -84,7 +84,7 @@ class Toolformer:
 
         # This is a bit ugly
         pred_ds = Dataset.from_dict({'text': all_preds,
-                                     'prompt': [tool.get_prompt_template().format(z) for z in dataset]})
+                                     'prompt': [tool.get_prompt_template().format(z['label']) for z in dataset]})
         #prompt_end_idx = len(tool.get_prompt_template().replace('{}', '').rstrip())
         return pred_ds #pred_ds.map(lambda x: {'text': x['text'][len(x['prompt']):]})
 
