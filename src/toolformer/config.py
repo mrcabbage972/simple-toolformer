@@ -1,11 +1,13 @@
 from dataclasses import dataclass
 
+import torch
+
 
 @dataclass
 class ToolformerConfig:
     # General
     model_name = "gpt2"
-    target_device = 'cpu'
+    target_device = 'cpu' if not torch.cuda.is_available() else 'cuda'
 
     # Training
     max_length = 1024
