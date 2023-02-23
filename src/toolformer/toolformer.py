@@ -63,8 +63,8 @@ class Toolformer:
             A Dataset containing a text field and a score field.
         """
         logger.info('Sampling dataset')
-
-        encoded_dataset = dataset.map(lambda x: self.tokenizer([tool.get_prompt_template().format(z) for z in x['label']],
+        prompts_dataset = dataset.map(lambda x: {'prompt': tool.get_prompt_template().format(x['label'])})
+        encoded_dataset = prompts_dataset.map(lambda x: self.tokenizer(x['prompt'],
                                                                truncation=True, padding=True), batched=True)
         encoded_dataset.set_format(columns=['input_ids', 'attention_mask'], type='torch')
         test_data_loader = DataLoader(encoded_dataset, batch_size=32,
