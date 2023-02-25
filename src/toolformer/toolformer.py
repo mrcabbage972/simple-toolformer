@@ -102,6 +102,8 @@ class Toolformer:
         """
             Filters the sampled tool uses by a criterion that quantifies how much they improve the likelihood
             of the text after the tool call. The paper uses a weighting scheme which is currently not implemented here.
+            Another thing to note is that in this stage the tool annotation is prepended to the input text rather than
+            inserted at its correct place
         :param inputs:
             A dataset with tool call annotations.
         :param tool:
