@@ -53,8 +53,10 @@ class Toolformer:
     def sample_dataset(self, dataset: Dataset, tool: Tool) -> Dataset:
         """
             This methods samples a dataset to produce example API calls.
-            The sampling procedure is significantly simplified from what is described in the paper and likely
-            wouldn't work well.
+            The sampling procedure is implemented as just straightforward generation.
+            The method in the paper is to first find the top K positions for the next token being [ and then
+            to try generating M calls start from each of these K.
+
         :param dataset:
             The input texts
         :param tool:
@@ -89,6 +91,16 @@ class Toolformer:
         return pred_ds #pred_ds.map(lambda x: {'text': x['text'][len(x['prompt']):]})
 
     def filter_likelihood(self, inputs: Dataset, tool: Tool) -> Dataset:
+        """
+            Filters the sampled tool uses by a criterion that quantifies how much they improve the likelihood
+            of the text after the tool call. The paper uses a weighting scheme which is currently not implemented here.
+        :param inputs:
+            A dataset with tool call annotations.
+        :param tool:
+            THe tool.
+        :return:
+            Same as inputs but filtered by the criterion.
+        """
         logger.info('Filtering generated samples by their likelihood')
 
         inputs = inputs.map(lambda x: {**x,
