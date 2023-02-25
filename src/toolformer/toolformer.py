@@ -1,12 +1,13 @@
 import logging
 import os
-from typing import List, Mapping
+from typing import List
 
 import torch
 from datasets import Dataset, concatenate_datasets
 from torch.utils.data import DataLoader
-from transformers import T5Tokenizer, DataCollatorWithPadding, Seq2SeqTrainer, Seq2SeqTrainingArguments, \
-    EarlyStoppingCallback, T5ForConditionalGeneration, AutoTokenizer, AutoModelForCausalLM
+from transformers import DataCollatorWithPadding, EarlyStoppingCallback, T5ForConditionalGeneration, AutoTokenizer, \
+    AutoModelForCausalLM, TrainingArguments, Trainer, \
+    DataCollatorForLanguageModeling
 
 from toolformer.config import ToolformerConfig
 from toolformer.sequence_scoring import get_scores_for_labels
@@ -18,8 +19,12 @@ class Toolformer:
     def __init__(self):
         self.cfg = ToolformerConfig()
         self.tokenizer = AutoTokenizer.from_pretrained(self.cfg.model_name, padding_side='left')
-        #self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.model = T5ForConditionalGeneration.from_pretrained(self.cfg.model_name)
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+        #
+        if self.cfg.causal_model:
+            self.model = AutoModelForCausalLM.from_pretrained(self.cfg.model_name)
+        else: # Currently assuming that only non-causal model is T5 family
+            self.model = T5ForConditionalGeneration.from_pretrained(self.cfg.model_name)
 
     def fit(self, dataset: Dataset, tools: List[Tool]):
         """
@@ -78,17 +83,20 @@ class Toolformer:
             inputs = {k: v.to(self.cfg.target_device) for k, v in inputs.items()}
             with torch.no_grad():
                 batch_preds = self.model.generate(**inputs,
-                                                  max_length=self.cfg.max_length,
+                                                  max_new_tokens=self.cfg.max_new_tokens,
                                                   return_dict_in_generate=True,
                                                   output_scores=True)
 
                 all_preds += [self.tokenizer.decode(x, skip_special_tokens=True) for x in batch_preds['sequences']]
 
-        # This is a bit ugly
+        # This is a bit ugly due to iterating over the dataset manually
         pred_ds = Dataset.from_dict({'text': all_preds,
                                      'prompt': [tool.get_prompt_template().format(z['label']) for z in dataset]})
         #prompt_end_idx = len(tool.get_prompt_template().replace('{}', '').rstrip())
-        return pred_ds #pred_ds.map(lambda x: {'text': x['text'][len(x['prompt']):]})
+        if self.cfg.causal_model:
+            return pred_ds.map(lambda x: {'text': x['text'][len(x['prompt']):]})
+        else:
+            return pred_ds
 
     def filter_likelihood(self, inputs: Dataset, tool: Tool) -> Dataset:
         """
@@ -133,13 +141,14 @@ class Toolformer:
 
     def fine_tune(self, api_call_samples: Dataset):
         """
-            This is just standard HF fine-tuning.
+            This is just standard HF fine-tuning with the language modeling objective.
+            See e.g. https://huggingface.co/docs/transformers/tasks/language_modeling
         :param api_call_samples:
         """
         logger.info('Fine-tuning the model on {} API call samples'.format(len(api_call_samples)))
         datasets = api_call_samples.train_test_split(test_size=self.cfg.test_size)
 
-        train_args = Seq2SeqTrainingArguments(
+        train_args = TrainingArguments(
             output_dir=os.path.join(self.cfg.output_path, self.cfg.output_name),
             evaluation_strategy="epoch",
             save_strategy="epoch",
@@ -155,13 +164,19 @@ class Toolformer:
             fp16=self.cfg.fp16,
         )
 
-        trainer = Seq2SeqTrainer(
+        if self.cfg.causal_model:
+            data_collator = DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
+        else:
+            data_collator = DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm_probability=self.cfg.mlm_prob)
+
+        trainer = Trainer(
             self.model,
             train_args,
             train_dataset=datasets["train"],
             eval_dataset=datasets["test"],
             tokenizer=self.tokenizer,
             compute_metrics=None,
+            data_collator=data_collator,
             callbacks=[EarlyStoppingCallback(early_stopping_patience=self.cfg.early_stopping_patience)]
         )
 

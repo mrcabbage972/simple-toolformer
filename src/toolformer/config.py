@@ -6,11 +6,16 @@ import torch
 @dataclass
 class ToolformerConfig:
     # General
-    model_name = "google/flan-t5-small"
+    model_name = "EleutherAI/gpt-neo-125M"
+    causal_model = True
     target_device = 'cpu' if not torch.cuda.is_available() else 'cuda'
 
+    # Inference
+    max_new_tokens = 128
+
     # Training
-    max_length = 1024
+    mlm_prob = 0.15
+    max_length = 256
     output_path = '..'
     output_name = 'model'
     learning_rate = 1e-4
