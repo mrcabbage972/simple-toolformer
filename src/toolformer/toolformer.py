@@ -12,6 +12,7 @@ from transformers import DataCollatorWithPadding, EarlyStoppingCallback, T5ForCo
 from toolformer.config import ToolformerConfig
 from toolformer.sequence_scoring import get_scores_for_labels
 from toolformer.tool import Tool
+from toolformer.tool_sampling import BasicToolSampler, TwoStepToolSampler
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +21,18 @@ class Toolformer:
         self.cfg = ToolformerConfig()
         self.tokenizer = AutoTokenizer.from_pretrained(self.cfg.model_name, padding_side='left')
         self.tokenizer.pad_token = self.tokenizer.eos_token
-        #
         if self.cfg.causal_model:
             self.model = AutoModelForCausalLM.from_pretrained(self.cfg.model_name)
         else: # Currently assuming that only non-causal model is T5 family
             self.model = T5ForConditionalGeneration.from_pretrained(self.cfg.model_name)
+
+        if self.cfg.sampler == 'basic':
+            self.tool_sampler = BasicToolSampler(self.tokenizer, self.model, self.cfg)
+        elif self.cfg.sampler == 'two_step':
+            # TODO: remove hard-coded args
+            self.tool_sampler = TwoStepToolSampler(self.tokenizer, self.model, self.cfg, 4, 2)
+        else:
+            raise ValueError
 
     def fit(self, dataset: Dataset, tools: List[Tool]):
         """
@@ -45,12 +53,16 @@ class Toolformer:
             logger.info('Examples of {} tool generation results: {}'.format(tool.get_tool_name(), ','.join(maybe_tool_samples[:2]['text'])))
             tool_samples = maybe_tool_samples.filter(lambda x: tool.text_has_call(x['text']))
             logger.info('{} samples left after filtering for tool name'.format(len(tool_samples)))
-            logger.info('Examples of {} tool filtered annotations: {}'.format(tool.get_tool_name(), ','.join(maybe_tool_samples[:2]['text'])))
-            executed_tool_samples = tool_samples.map(lambda x: self.execute_tool_call(x, tool))
-            likely_samples = self.filter_likelihood(executed_tool_samples, tool)
-            logger.info('{} samples left after filtering by likelihood'.format(len(likely_samples)))
-            samples_for_tuning.append(likely_samples)
-        dataset_for_tuning = concatenate_datasets(samples_for_tuning)
+            if len(tool_samples) > 0:
+                logger.info('Examples of {} tool filtered annotations: {}'.format(tool.get_tool_name(), ','.join(maybe_tool_samples[:2]['text'])))
+                executed_tool_samples = tool_samples.map(lambda x: self.execute_tool_call(x, tool))
+                likely_samples = self.filter_likelihood(executed_tool_samples, tool)
+                logger.info('{} samples left after filtering by likelihood'.format(len(likely_samples)))
+                samples_for_tuning.append(likely_samples)
+        if len(samples_for_tuning) > 0:
+            dataset_for_tuning = concatenate_datasets(samples_for_tuning)
+        else:
+            dataset_for_tuning = []
         if len(dataset_for_tuning) == 0:
             raise ValueError("Can't proceed: There is no data to fine-tune on!")
         self.fine_tune(dataset_for_tuning)
@@ -70,33 +82,8 @@ class Toolformer:
             A Dataset containing a text field and a score field.
         """
         logger.info('Sampling dataset')
-        prompts_dataset = dataset.map(lambda x: {'prompt': tool.get_prompt_template().format(x['label'])})
-        encoded_dataset = prompts_dataset.map(lambda x: self.tokenizer(x['prompt'],
-                                                               truncation=True, padding=True), batched=True)
-        encoded_dataset.set_format(columns=['input_ids', 'attention_mask'], type='torch')
-        test_data_loader = DataLoader(encoded_dataset, batch_size=32,
-                                      collate_fn=DataCollatorWithPadding(self.tokenizer))
-        data_iter = iter(test_data_loader)
+        return self.tool_sampler.sample(dataset, tool)
 
-        all_preds = []
-        for inputs in data_iter:
-            inputs = {k: v.to(self.cfg.target_device) for k, v in inputs.items()}
-            with torch.no_grad():
-                batch_preds = self.model.generate(**inputs,
-                                                  max_new_tokens=self.cfg.max_new_tokens,
-                                                  return_dict_in_generate=True,
-                                                  output_scores=True)
-
-                all_preds += [self.tokenizer.decode(x, skip_special_tokens=True) for x in batch_preds['sequences']]
-
-        # This is a bit ugly due to iterating over the dataset manually
-        pred_ds = Dataset.from_dict({'text': all_preds,
-                                     'prompt': [tool.get_prompt_template().format(z['label']) for z in dataset]})
-        #prompt_end_idx = len(tool.get_prompt_template().replace('{}', '').rstrip())
-        if self.cfg.causal_model:
-            return pred_ds.map(lambda x: {'text': x['text'][len(x['prompt']):]})
-        else:
-            return pred_ds
 
     def filter_likelihood(self, inputs: Dataset, tool: Tool) -> Dataset:
         """
@@ -104,6 +91,9 @@ class Toolformer:
             of the text after the tool call. The paper uses a weighting scheme which is currently not implemented here.
             Another thing to note is that in this stage the tool annotation is prepended to the input text rather than
             inserted at its correct place
+            The criterion can be roughly described as:
+            # loss (with prefix of tool call and result ) < min(loss (with prefix of tool call), loss(no tool call)
+
         :param inputs:
             A dataset with tool call annotations.
         :param tool:
@@ -136,7 +126,6 @@ class Toolformer:
                                                                  self.model, self.tokenizer)[0]
                                        }, batched=True)
 
-        # loss (with prefix of tool call and result ) < min(loss (with prefix of tool call), loss(no tool call)
 
         return inputs.filter(
             lambda x: min(x['loss_no_tool'], x['loss_tool_no_result']) - x['loss_tool'] >= self.cfg.tool_call_thresh)

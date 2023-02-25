@@ -10,6 +10,9 @@ class ToolformerConfig:
     causal_model = True
     target_device = 'cpu' if not torch.cuda.is_available() else 'cuda'
 
+    # Sampling
+    sampler = 'basic'
+
     # Inference
     max_new_tokens = 128
 
