@@ -99,9 +99,12 @@ class TwoStepToolSampler:
         # TODO: refactor to avoid having to pass two dataset objects
         # Get the text before the desired position and add the tool call token
         dataset_at_idx = encoded_dataset.add_column('pos_idx', pos_idx.numpy())\
-            .map(lambda x: {'input_ids': torch.cat([x['input_ids'][:x['pos_idx']], pos_idx], -1),
-                            'input_ids_suffix': x['input_ids'][x['pos_idx']:],
-                            'attention_mask': torch.cat([x['attention_mask'][:x['pos_idx']], torch.ones(x['input_ids'].shape[0])], -1)})
+            .map(lambda x: {'input_ids': torch.cat([x['input_ids'][:x['pos_idx']], torch.tensor(x['pos_idx']).unsqueeze(-1)], -1),
+                            #'input_ids_suffix': x['input_ids'][x['pos_idx']:],
+                            'attention_mask': torch.cat([x['attention_mask'][:x['pos_idx']], torch.tensor(1).unsqueeze(-1)], -1)})
+        suffixes_ds = dataset_at_idx.map(lambda x: {'suffix': self.tokenizer.decode(x['input_ids'][x['pos_idx']:], skip_special_tokens=True)})
+        suffixes_ds = suffixes_ds.remove_columns(list(dataset_at_idx.features.keys()))
+        dataset_at_idx.set_format(columns=['input_ids', 'attention_mask'], type='torch')
         data_loader = DataLoader(dataset_at_idx, batch_size=32,
                                  collate_fn=DataCollatorWithPadding(self.tokenizer))
         data_iter = iter(data_loader)
@@ -114,7 +117,9 @@ class TwoStepToolSampler:
                                                   return_dict_in_generate=True,
                                                   output_scores=True,
                                                   eos_token_id=self.tool_call_end_token_id)
-            all_preds += [self.tokenizer.decode(x + y, skip_special_tokens=True) for x, y
-                          in zip(batch_preds['sequences'], inputs['input_ids_suffix'])]
+            all_preds += [self.tokenizer.decode(x, skip_special_tokens=True) for x
+                          in batch_preds['sequences']]
 
-        return postprocess_samples(all_preds, dataset, tool)
+        samples_ds = postprocess_samples(all_preds, dataset, tool, self.cfg.causal_model)
+        samples_ds = concatenate_datasets([samples_ds, suffixes_ds], axis=1)
+        return samples_ds.map(lambda x: {'text': x['text'] + x['suffix']})
