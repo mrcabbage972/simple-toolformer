@@ -103,6 +103,9 @@ class Toolformer:
         """
         logger.info('Filtering generated samples by their likelihood')
 
+        if self.cfg.causal_model:
+            raise NotImplementedError
+
         inputs = inputs.map(lambda x: {**x,
                                        'text_before': tool.get_text_before_call(x['text']),
                                        'tool_call': tool.get_call_from_text(x['text']),
