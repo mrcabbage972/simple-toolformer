@@ -12,6 +12,15 @@ def prepare_dataset_for_sampling(dataset, tokenizer, tool):
     encoded_dataset.set_format(columns=['input_ids', 'attention_mask'], type='torch')
     return encoded_dataset
 
+def postprocess_samples(all_preds, dataset, tool, is_causal_model):
+    pred_ds = Dataset.from_dict({'text': all_preds,
+                                 'prompt': [tool.get_prompt_template().format(z['label']) for z in dataset]})
+    # prompt_end_idx = len(tool.get_prompt_template().replace('{}', '').rstrip())
+    if is_causal_model:
+        return pred_ds.map(lambda x: {'text': x['text'][len(x['prompt']):]})
+    else:
+        return pred_ds
+
 
 class BasicToolSampler:
     """
@@ -41,13 +50,7 @@ class BasicToolSampler:
                 all_preds += [self.tokenizer.decode(x, skip_special_tokens=True) for x in batch_preds['sequences']]
 
         # This is a bit ugly due to iterating over the dataset manually
-        pred_ds = Dataset.from_dict({'text': all_preds,
-                                     'prompt': [tool.get_prompt_template().format(z['label']) for z in dataset]})
-        # prompt_end_idx = len(tool.get_prompt_template().replace('{}', '').rstrip())
-        if self.cfg.causal_model:
-            return pred_ds.map(lambda x: {'text': x['text'][len(x['prompt']):]})
-        else:
-            return pred_ds
+        return postprocess_samples(all_preds, dataset, tool, self.cfg.causal_model)
 
 
 class TwoStepToolSampler:
@@ -66,12 +69,13 @@ class TwoStepToolSampler:
         self.num_seq_per_pos = num_seq_per_pos
         self.top_k = top_k
         self.tool_call_token_id = tokenizer.convert_tokens_to_ids(Tool.API_CALL_PREFIX)
+        self.tool_call_end_token_id = tokenizer.convert_tokens_to_ids(Tool.API_CALL_SUFFIX)
 
     def sample(self, dataset: Dataset, tool: Tool) -> Dataset:
         encoded_dataset = prepare_dataset_for_sampling(dataset, self.tokenizer, tool)
 
         topk_pos_idx = self.get_topk_pos_idx(encoded_dataset, tool)
-        anns_at_pos = [self.get_anns_at_pos(encoded_dataset, topk_pos_idx[:, idx]) for idx in range(self.top_k)]
+        anns_at_pos = [self.get_anns_at_pos(dataset, encoded_dataset, topk_pos_idx[:, idx], tool) for idx in range(self.top_k)]
         return concatenate_datasets(anns_at_pos)
 
     def get_topk_pos_idx(self, encoded_dataset, tool):
@@ -91,10 +95,12 @@ class TwoStepToolSampler:
             all_preds.append(api_prob_topk_idx.detach())
         return torch.concat(all_preds, 0)
 
-    def get_anns_at_pos(self, encoded_dataset, pos_idx):
+    def get_anns_at_pos(self, dataset, encoded_dataset, pos_idx, tool):
+        # TODO: refactor to avoid having to pass two dataset objects
         # Get the text before the desired position and add the tool call token
         dataset_at_idx = encoded_dataset.add_column('pos_idx', pos_idx.numpy())\
             .map(lambda x: {'input_ids': torch.cat([x['input_ids'][:x['pos_idx']], pos_idx], -1),
+                            'input_ids_suffix': x['input_ids'][x['pos_idx']:],
                             'attention_mask': torch.cat([x['attention_mask'][:x['pos_idx']], torch.ones(x['input_ids'].shape[0])], -1)})
         data_loader = DataLoader(dataset_at_idx, batch_size=32,
                                  collate_fn=DataCollatorWithPadding(self.tokenizer))
@@ -106,8 +112,9 @@ class TwoStepToolSampler:
             batch_preds = self.model.generate(**inputs,
                                                   max_new_tokens=self.cfg.max_new_tokens,
                                                   return_dict_in_generate=True,
-                                                  output_scores=True)
-            all_preds += [self.tokenizer.decode(x, skip_special_tokens=True) for x in batch_preds['sequences']]
-            # TODO: finish implementing this: combine the generation result with the text suffix.
-            #  See if the generation can stop early when encountering the tool call suffix or otherwise
-            #  limit the generation length.
+                                                  output_scores=True,
+                                                  eos_token_id=self.tool_call_end_token_id)
+            all_preds += [self.tokenizer.decode(x + y, skip_special_tokens=True) for x, y
+                          in zip(batch_preds['sequences'], inputs['input_ids_suffix'])]
+
+        return postprocess_samples(all_preds, dataset, tool)
