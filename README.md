@@ -1,6 +1,6 @@
 # simple-toolformer
 # Introduction
-A Python implementation of [Toolformer](https://arxiv.org/abs/2302.04761) using Huggingface Transformers
+A Python implementation of [Toolformer](https://arxiv.org/abs/2302.04761) using Pytorch and Huggingface Transformers
 
 This implementation is under active development and wasn't yet verified to work end-to-end. 
 Therefore, it's currently intended to be used for educational purposes only.
