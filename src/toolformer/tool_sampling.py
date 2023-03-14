@@ -6,9 +6,16 @@ import torch.nn.functional as F
 from toolformer.tool import Tool
 
 def prepare_dataset_for_sampling(dataset, tokenizer, tool):
+    empty_prompt = tool.get_prompt_template().format('')
+    tok_empty_prompt = tokenizer(empty_prompt)
+
     prompts_dataset = dataset.map(lambda x: {'prompt': tool.get_prompt_template().format(x['label'])})
     encoded_dataset = prompts_dataset.map(lambda x: tokenizer(x['prompt'],
                                                                    truncation=True, padding=True), batched=True)
+    encoded_dataset = encoded_dataset.map(lambda x: {'pos_idx_mask':
+                                                     torch.cat([torch.zeros(len(tok_empty_prompt['input_ids'])),
+                                                                torch.ones(len(x['input_ids']) - len(tok_empty_prompt['input_ids']))],
+                                                               -1)})
     encoded_dataset.set_format(columns=['input_ids', 'attention_mask'], type='torch')
     return encoded_dataset
 
@@ -79,18 +86,18 @@ class TwoStepToolSampler:
         return concatenate_datasets(anns_at_pos)
 
     def get_topk_pos_idx(self, encoded_dataset, tool):
+        encoded_dataset.set_format(columns=['input_ids', 'attention_mask', 'pos_idx_mask'], type='torch')
         data_loader = DataLoader(encoded_dataset, batch_size=32,
                                  collate_fn=DataCollatorWithPadding(self.tokenizer))
         data_iter = iter(data_loader)
 
-        # TODO: create mask to cancel all tokens from the prompt template
-
         all_preds = []
         for inputs in data_iter:
             inputs = {k: v.to(self.cfg.target_device) for k, v in inputs.items()}
-            out = self.model(**inputs)
+            out = self.model(**{k:v for k,v in inputs.items() if k != 'pos_idx_mask'})
             api_prob_at_idx = out.logits[:, :, self.tool_call_token_id]
             api_prob_at_idx[~inputs['attention_mask']] = -100
+            api_prob_at_idx[~inputs['pos_idx_mask'].long()] = -100
             api_prob_topk_idx = api_prob_at_idx.topk(self.top_k).indices
             all_preds.append(api_prob_topk_idx.detach())
         return torch.concat(all_preds, 0)
