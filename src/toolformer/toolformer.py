@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 
 class Toolformer:
+    """
+    The main Toolformer class. It has a fit() method for training a model and a generate() model for inference.
+    """
     def __init__(self):
         self.cfg = ToolformerConfig()
         self.tokenizer = AutoTokenizer.from_pretrained(self.cfg.model_name, padding_side='left')
@@ -33,6 +36,9 @@ class Toolformer:
         else:
             raise ValueError
 
+    def generate(self, dataset: Dataset, tools: List[Tool]):
+        raise NotImplementedError
+
     def fit(self, dataset: Dataset, tools: List[Tool]):
         """
             This is the main method for implementing the training process described in the Toolformer paper.
@@ -48,7 +54,7 @@ class Toolformer:
         logger.info('Fitting with a dataset of size {} and {} tools'.format(len(dataset), len(tools)))
         samples_for_tuning = []
         for tool in tools:
-            maybe_tool_samples = self.sample_dataset(dataset, tool)
+            maybe_tool_samples = self._sample_dataset(dataset, tool)
             logger.info('Examples of {} tool generation results: {}'.format(tool.get_tool_name(),
                                                                             ','.join(maybe_tool_samples[:2]['text'])))
             tool_samples = maybe_tool_samples.filter(lambda x: tool.text_has_call(x['text']))
@@ -56,8 +62,8 @@ class Toolformer:
             if len(tool_samples) > 0:
                 logger.info('Examples of {} tool filtered annotations: {}'.format(tool.get_tool_name(), ','.join(
                     maybe_tool_samples[:2]['text'])))
-                executed_tool_samples = tool_samples.map(lambda x: self.execute_tool_call(x, tool))
-                likely_samples = self.filter_likelihood(executed_tool_samples, tool)
+                executed_tool_samples = tool_samples.map(lambda x: self._execute_tool_call(x, tool))
+                likely_samples = self._filter_likelihood(executed_tool_samples, tool)
                 logger.info('{} samples left after filtering by likelihood'.format(len(likely_samples)))
                 samples_for_tuning.append(likely_samples)
         if len(samples_for_tuning) > 0:
@@ -66,9 +72,9 @@ class Toolformer:
             dataset_for_tuning = []
         if len(dataset_for_tuning) == 0:
             raise ValueError("Can't proceed: There is no data to fine-tune on!")
-        self.fine_tune(dataset_for_tuning)
+        self._fine_tune(dataset_for_tuning)
 
-    def sample_dataset(self, dataset: Dataset, tool: Tool) -> Dataset:
+    def _sample_dataset(self, dataset: Dataset, tool: Tool) -> Dataset:
         """
             This methods samples a dataset to produce example API calls.
             The sampling procedure is implemented as just straightforward generation.
@@ -85,7 +91,7 @@ class Toolformer:
         logger.info('Sampling dataset')
         return self.tool_sampler.sample(dataset, tool)
 
-    def filter_likelihood(self, inputs: Dataset, tool: Tool) -> Dataset:
+    def _filter_likelihood(self, inputs: Dataset, tool: Tool) -> Dataset:
         """
             Filters the sampled tool uses by a criterion that quantifies how much they improve the likelihood
             of the text after the tool call. The paper uses a weighting scheme which is currently not implemented here.
@@ -132,7 +138,7 @@ class Toolformer:
         return inputs.filter(
             lambda x: min(x['loss_no_tool'], x['loss_tool_no_result']) - x['loss_tool'] >= self.cfg.tool_call_thresh)
 
-    def fine_tune(self, api_call_samples: Dataset):
+    def _fine_tune(self, api_call_samples: Dataset):
         """
             This is just standard HF fine-tuning with the language modeling objective.
             See e.g. https://huggingface.co/docs/transformers/tasks/language_modeling
@@ -175,6 +181,6 @@ class Toolformer:
 
         trainer.train()
 
-    def execute_tool_call(self, sample, tool: Tool) -> dict:
+    def _execute_tool_call(self, sample, tool: Tool) -> dict:
         sample['tool_result'] = tool.run(sample['text'])
         return sample
