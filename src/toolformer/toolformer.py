@@ -2,10 +2,8 @@ import logging
 import os
 from typing import List
 
-import torch
 from datasets import Dataset, concatenate_datasets
-from torch.utils.data import DataLoader
-from transformers import DataCollatorWithPadding, EarlyStoppingCallback, T5ForConditionalGeneration, AutoTokenizer, \
+from transformers import EarlyStoppingCallback, T5ForConditionalGeneration, AutoTokenizer, \
     AutoModelForCausalLM, TrainingArguments, Trainer, \
     DataCollatorForLanguageModeling
 
@@ -16,6 +14,7 @@ from toolformer.tool_sampling import BasicToolSampler, TwoStepToolSampler
 
 logger = logging.getLogger(__name__)
 
+
 class Toolformer:
     def __init__(self):
         self.cfg = ToolformerConfig()
@@ -23,14 +22,14 @@ class Toolformer:
         self.tokenizer.pad_token = self.tokenizer.eos_token
         if self.cfg.causal_model:
             self.model = AutoModelForCausalLM.from_pretrained(self.cfg.model_name)
-        else: # Currently assuming that only non-causal model is T5 family
+        else:
+            assert 't5' in self.cfg.model_name # Currently assuming that only non-causal model is T5 family
             self.model = T5ForConditionalGeneration.from_pretrained(self.cfg.model_name)
 
         if self.cfg.sampler == 'basic':
             self.tool_sampler = BasicToolSampler(self.tokenizer, self.model, self.cfg)
         elif self.cfg.sampler == 'two_step':
-            # TODO: remove hard-coded args
-            self.tool_sampler = TwoStepToolSampler(self.tokenizer, self.model, self.cfg, 4, 2)
+            self.tool_sampler = TwoStepToolSampler(self.tokenizer, self.model, self.cfg, self.cfg.top_k, self.cfg.num_seq_per_pos)
         else:
             raise ValueError
 
@@ -50,11 +49,13 @@ class Toolformer:
         samples_for_tuning = []
         for tool in tools:
             maybe_tool_samples = self.sample_dataset(dataset, tool)
-            logger.info('Examples of {} tool generation results: {}'.format(tool.get_tool_name(), ','.join(maybe_tool_samples[:2]['text'])))
+            logger.info('Examples of {} tool generation results: {}'.format(tool.get_tool_name(),
+                                                                            ','.join(maybe_tool_samples[:2]['text'])))
             tool_samples = maybe_tool_samples.filter(lambda x: tool.text_has_call(x['text']))
             logger.info('{} samples left after filtering for tool name'.format(len(tool_samples)))
             if len(tool_samples) > 0:
-                logger.info('Examples of {} tool filtered annotations: {}'.format(tool.get_tool_name(), ','.join(maybe_tool_samples[:2]['text'])))
+                logger.info('Examples of {} tool filtered annotations: {}'.format(tool.get_tool_name(), ','.join(
+                    maybe_tool_samples[:2]['text'])))
                 executed_tool_samples = tool_samples.map(lambda x: self.execute_tool_call(x, tool))
                 likely_samples = self.filter_likelihood(executed_tool_samples, tool)
                 logger.info('{} samples left after filtering by likelihood'.format(len(likely_samples)))
@@ -83,7 +84,6 @@ class Toolformer:
         """
         logger.info('Sampling dataset')
         return self.tool_sampler.sample(dataset, tool)
-
 
     def filter_likelihood(self, inputs: Dataset, tool: Tool) -> Dataset:
         """
@@ -128,7 +128,6 @@ class Toolformer:
                                            get_scores_for_labels(inputs['tool_call_text_before'], inputs['text_after'],
                                                                  self.model, self.tokenizer)[0]
                                        }, batched=True)
-
 
         return inputs.filter(
             lambda x: min(x['loss_no_tool'], x['loss_tool_no_result']) - x['loss_tool'] >= self.cfg.tool_call_thresh)

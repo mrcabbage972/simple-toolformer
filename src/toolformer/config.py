@@ -13,6 +13,10 @@ class ToolformerConfig:
     # Sampling
     sampler = 'basic'
 
+    # Two-stage sampler config
+    top_k = 1 # Number of positions
+    num_seq_per_pos = 1 # Number of sequences to generate in each position
+
     # Inference
     max_new_tokens = 128
 
